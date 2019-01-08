@@ -21,18 +21,12 @@ class RackTestApp < Minitest::Test
     }
   end
 
-  def test_custom_do_not_trace
-    clear_all_traces
+  def setup
+    @dnt_original = AppOpticsAPM::Config[:dnt_regexp_compiled]
+  end
 
-    dnt_original = AppOpticsAPM::Config[:dnt_regexp]
-    AppOpticsAPM::Config[:dnt_regexp] = "lobster$"
-
-    get "/lobster"
-
-    traces = get_all_traces
-    assert traces.empty?
-
-    AppOpticsAPM::Config[:dnt_regexp] = dnt_original
+  def teardown
+    AppOpticsAPM::Config[:dnt_regexp_compiled] = @dnt_original
   end
 
   def test_do_not_trace_static_assets
@@ -68,13 +62,29 @@ class RackTestApp < Minitest::Test
     assert_equal 404, last_response.status
   end
 
+  def test_custom_do_not_trace
+    clear_all_traces
+
+    dnt_original = AppOpticsAPM::Config[:dnt_regexp_compiled]
+    dnt_regexp = "lobster$"
+    AppOpticsAPM::Config[:dnt_regexp_compiled] = Regexp.new(dnt_regexp, AppOpticsAPM::Config[:dnt_opts])
+
+    get "/lobster"
+
+    traces = get_all_traces
+    assert traces.empty?
+
+    AppOpticsAPM::Config[:dnt_regexp_compiled] = dnt_original
+  end
+
   def test_complex_do_not_trace
     clear_all_traces
 
-    dnt_original = AppOpticsAPM::Config[:dnt_regexp]
+    dnt_original = AppOpticsAPM::Config[:dnt_regexp_compiled]
 
     # Do not trace .js files _except for_ show.js
-    AppOpticsAPM::Config[:dnt_regexp] = "(\.js$)(?<!show.js)"
+    dnt_regexp = "(\.js$)(?<!show.js)"
+    AppOpticsAPM::Config[:dnt_regexp_compiled] = Regexp.new(dnt_regexp, AppOpticsAPM::Config[:dnt_opts])
 
     # First: We shouldn't trace general .js files
     get "/javascripts/application.js"
@@ -90,7 +100,11 @@ class RackTestApp < Minitest::Test
     traces = get_all_traces
     assert !traces.empty?
 
-    AppOpticsAPM::Config[:dnt_regexp] = dnt_original
+    AppOpticsAPM::Config[:dnt_regexp_compiled] = dnt_original
+  end
+
+  def test_compile_dnt_regex
+
   end
 end
 

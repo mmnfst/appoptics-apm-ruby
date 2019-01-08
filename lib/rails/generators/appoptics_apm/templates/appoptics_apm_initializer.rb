@@ -105,8 +105,23 @@ if defined?(AppOpticsAPM::Config)
   # Requests with positive matches (non nil) will not be traced.
   # See lib/appoptics_apm/util.rb: AppOpticsAPM::Util.static_asset?
   #
-  AppOpticsAPM::Config[:dnt_regexp] = '\.(jpg|jpeg|gif|png|ico|css|zip|tgz|gz|rar|bz2|pdf|txt|tar|wav|bmp|rtf|js|flv|swf|otf|eot|ttf|woff|woff2|svg|less)(\?.+){0,1}$'
+
+  # :dnt_assets is an array of strings for filtering (not regular expressions)
+  AppOpticsAPM::Config[:dnt_assets] = %w[.bmp .bz2 .css .eot .flv .gif .gz .ico
+                                         .jpeg .jpg .js .less .otf .pdf .png
+                                         .rar .rtf .svg .swf .tar .tgz .ttf .txt
+                                         .wav .woff .woff2 .zip healthcheck]
+
+  # :dnt_regexp, as implemented below, uses the :dnt_assets list to match
+  # the end of the url (ignoring any query params)
+  # e.g: base_url.com/file.css?v=1.123 would be not be traced
+  #                       ^^^^
+  # but base_url.com/css/some.file would be traced
+  # :dnt_regexp can be changed to any filter that a url should be matched against
+  assets_source = Regexp.union(AppOpticsAPM::Config[:dnt_assets]).source
+  AppOpticsAPM::Config[:dnt_regexp] = "#{assets_source}(\\?.+){0,1}$"
   AppOpticsAPM::Config[:dnt_opts]   = Regexp::IGNORECASE
+  AppOpticsAPM::Config[:dnt_regexp_compiled] = Regexp.new(AppOpticsAPM::Config[:dnt_regexp], AppOpticsAPM::Config[:dnt_opts])
 
   #
   # Blacklist urls
@@ -120,7 +135,6 @@ if defined?(AppOpticsAPM::Config)
   # Example: AppOpticsAPM::Config[:blacklist] = ['google.com']
   #
   AppOpticsAPM::Config[:blacklist] = []
-  #
 
   #
   # Rails Exception Logging

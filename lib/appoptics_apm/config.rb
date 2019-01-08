@@ -65,30 +65,35 @@ module AppOpticsAPM
       end
       load(config_files[0])
       check_env_vars
+      precompile_dnt
     end
 
     # There are 4 variables that can be set in the config file or as env vars.
     # Oboe will override vars passed in if it finds an environment variable
     # :debug_level and :verbose need special consideration, because they are used in Ruby
     def self.check_env_vars
-      unless (-1..6).include?(AppOpticsAPM::Config[:debug_level])
-        AppOpticsAPM::Config[:debug_level] = 3
-      end
+      AppOpticsAPM::Config[:debug_level] = 3 unless (-1..6).cover?(AppOpticsAPM::Config[:debug_level])
 
       # let's find and use the  equivalent debug level for ruby
       debug_level = ENV['APPOPTICS_DEBUG_LEVEL'] ? ENV['APPOPTICS_DEBUG_LEVEL'].to_i : AppOpticsAPM::Config[:debug_level]
-      if debug_level < 0
-        # there should be no logging if APPOPTICS_DEBUG_LEVEL == -1
-        # In Ruby level 5 is UNKNOWN and it can log, but level 6 is quiet
-        AppOpticsAPM.logger.level = 6
-      else
-        AppOpticsAPM.logger.level = [4 - debug_level, 0].max
-      end
+      # there should be no logging if APPOPTICS_DEBUG_LEVEL == -1
+      # In Ruby level 5 is UNKNOWN and it can log, but level 6 is quiet
+      AppOpticsAPM.logger.level = debug_level.negative? ? 6 : [4 - debug_level, 0].max
 
-      # the verbose setting is only relevant for ruby, ENV['APPOPTICS_GEM_VERBOSE'] overrides
-      if ENV.key?('APPOPTICS_GEM_VERBOSE')
-        AppOpticsAPM::Config[:verbose] = ENV['APPOPTICS_GEM_VERBOSE'].downcase == 'true'
-      end
+      # the verbose setting is only relevant for ruby and not the c-lib
+      return unless ENV.key?('APPOPTICS_GEM_VERBOSE')
+
+      AppOpticsAPM::Config[:verbose] = ENV['APPOPTICS_GEM_VERBOSE'].casecmp?('true')
+    end
+
+    # make sure we have a precompiled regex for "do-not-trace" filters
+    # also sometimes called "static assets"
+    def self.precompile_dnt
+      return if AppOpticsAPM::Config[:dnt_regexp_compiled]
+
+      assets_source ||= Regexp.union(AppOpticsAPM::Config[:dnt_assets]).source
+      AppOpticsAPM::Config[:dnt_regexp] ||= "#{assets_source}(\\?.+){0,1}$"
+      AppOpticsAPM::Config[:dnt_regexp_compiled] = Regexp.new(AppOpticsAPM::Config[:dnt_regexp], AppOpticsAPM::Config[:dnt_opts])
     end
 
     ##
@@ -132,7 +137,6 @@ module AppOpticsAPM
     # Initializer method to set everything up with a default configuration.
     # The defaults are read from the template configuration file.
     #
-    # rubocop:disable Metrics/AbcSize
     def self.initialize(_data = {})
       @@instrumentation.each { |k| @@config[k] = {} }
       @@config[:transaction_name] = {}
@@ -142,10 +146,9 @@ module AppOpticsAPM
       load(File.join(File.dirname(File.dirname(__FILE__)),
                     'rails/generators/appoptics_apm/templates/appoptics_apm_initializer.rb'))
 
-      # to make sure we include the service_key if it is set as an ENV var
+      # to make sure we include env vars
       check_env_vars
     end
-    # rubocop:enable Metrics/AbcSize
 
     def self.update!(data)
       data.each do |key, value|
@@ -176,11 +179,12 @@ module AppOpticsAPM
     def self.[]=(key, value)
       @@config[key.to_sym] = value
 
-      if key == :sampling_rate
+      case key
+      when :sampling_rate
         AppOpticsAPM.logger.warn '[appoptics_apm/config] sampling_rate is not a supported setting for AppOpticsAPM::Config.  ' \
                          'Please use :sample_rate.'
 
-      elsif key == :sample_rate
+      when :sample_rate
         unless value.is_a?(Integer) || value.is_a?(Float)
           AppOpticsAPM.logger.warn "[appoptics_apm/config] :sample_rate must be a number between 0 and 1000000 (1m) " \
                                    "(provided: #{value}), corrected to 0"
@@ -199,19 +203,19 @@ module AppOpticsAPM
         @@config[key.to_sym] = value.to_i
         AppOpticsAPM.set_sample_rate(value) if AppOpticsAPM.loaded
 
-      elsif key == :action_blacklist
+      when :action_blacklist
         AppOpticsAPM.logger.warn "[appoptics_apm/config] :action_blacklist has been deprecated and no longer functions."
 
-      elsif key == :resque
+      when :resque
         AppOpticsAPM.logger.warn "[appoptics_apm/config] :resque config is deprecated.  It is now split into :resqueclient and :resqueworker."
         AppOpticsAPM.logger.warn "[appoptics_apm/config] Called from #{Kernel.caller[0]}"
 
-      elsif key == :include_url_query_params # DEPRECATED
+      when :include_url_query_params # DEPRECATED
         # Obey the global flag and update all of the per instrumentation
         # <tt>:log_args</tt> values.
         @@config[:rack][:log_args] = value
 
-      elsif key == :include_remote_url_params # DEPRECATED
+      when :include_remote_url_params # DEPRECATED
         # Obey the global flag and update all of the per instrumentation
         # <tt>:log_args</tt> values.
         @@http_clients.each do |i|
@@ -219,7 +223,7 @@ module AppOpticsAPM
         end
 
       # Update liboboe if updating :tracing_mode
-      elsif key == :tracing_mode
+      when :tracing_mode
         AppOpticsAPM.set_tracing_mode(value.to_sym) if AppOpticsAPM.loaded
 
         # Make sure that the mode is stored as a symbol
@@ -233,20 +237,33 @@ module AppOpticsAPM
 
       if sym.to_s =~ /(.+)=$/
         self[$1] = args.first
+
+      # Try part of the @@config hash first
+      elsif @@config.key?(sym)
+        self[sym]
+
+      # Then try as a class variable
+      elsif class_variable_defined?(class_var_name.to_sym)
+        class_eval(class_var_name)
+
+      # fall back to super
       else
-        # Try part of the @@config hash first
-        if @@config.key?(sym)
-          self[sym]
-
-        # Then try as a class variable
-        elsif self.class_variable_defined?(class_var_name.to_sym)
-          self.class_eval(class_var_name)
-
-        # Congrats - You've won a brand new nil...
-        else
-          nil
-        end
+        super
       end
+    end
+
+    def self.respond_to_missing?(sym, include_private = false)
+      class_var_name = "@@#{sym}"
+
+      return true if sym.to_s =~ /(.+)=$/
+
+      # Try part of the @@config hash first
+      return true if @@config.key?(sym)
+
+      # Then try as a class variable
+      return true if class_variable_defined?(class_var_name.to_sym)
+
+      super
     end
   end
 end

@@ -104,7 +104,8 @@ module AppOpticsAPM
       # solely on filename)
       #
       def static_asset?(path)
-        path =~ Regexp.new(AppOpticsAPM::Config[:dnt_regexp], AppOpticsAPM::Config[:dnt_opts])
+        AppOpticsAPM::Config[:dnt_regexp_compiled].match? path
+        # path =~ Regexp.new(AppOpticsAPM::Config[:dnt_regexp], AppOpticsAPM::Config[:dnt_opts])
       rescue => e
         AppOpticsAPM.logger.warn "[AppOpticsAPM/debug] Could not apply Regex.new to path. #{e.inspect}"
         false
