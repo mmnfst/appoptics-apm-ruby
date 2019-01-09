@@ -104,10 +104,11 @@ module AppOpticsAPM
       # solely on filename)
       #
       def static_asset?(path)
-        AppOpticsAPM::Config[:dnt_regexp_compiled].match? path
-        # path =~ Regexp.new(AppOpticsAPM::Config[:dnt_regexp], AppOpticsAPM::Config[:dnt_opts])
+        return AppOpticsAPM::Config[:dnt_regexp_compiled].match?(path) if RUBY_VERSION >= '2.4'
+
+        AppOpticsAPM::Config[:dnt_regexp_compiled].match(path)
       rescue => e
-        AppOpticsAPM.logger.warn "[AppOpticsAPM/debug] Could not apply Regex.new to path. #{e.inspect}"
+        AppOpticsAPM.logger.warn "[AppOpticsAPM/debug] Could not apply do-not-trace filter to path. #{e.inspect}"
         false
       end
 
