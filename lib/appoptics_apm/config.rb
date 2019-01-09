@@ -82,8 +82,7 @@ module AppOpticsAPM
 
       # the verbose setting is only relevant for ruby and not the c-lib
       return unless ENV.key?('APPOPTICS_GEM_VERBOSE')
-
-      AppOpticsAPM::Config[:verbose] = ENV['APPOPTICS_GEM_VERBOSE'].casecmp?('true')
+      AppOpticsAPM::Config[:verbose] = ENV['APPOPTICS_GEM_VERBOSE'].downcase == 'true'
     end
 
     # make sure we have a precompiled regex for "do-not-trace" filters
