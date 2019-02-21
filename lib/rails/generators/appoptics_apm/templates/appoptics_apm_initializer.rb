@@ -50,11 +50,24 @@ if defined?(AppOpticsAPM::Config)
   AppOpticsAPM::Config[:verbose] = false
 
   #
+  # NOOP for cli exceptions
+  #
+  # in general commandline 'rake' and 'rails' invocations are not instrumented
+  # except when they are called with a command from this list.
+  # E.g. including 's' and 'server' will lead to 'bundle exec rails server'
+  # to be instrumented and metrics and traces to be collected,
+  # but 'bundle exec rails assets:precompile' would not be instrumented
+  #
+  AppOpticsAPM::Config[:cli_instrument_cmds] = %w[s server t test]
+
+  #
   # Turn tracing on or off
   #
   # By default tracing is set to 'always', the other option is 'never'.
   # 'always' means that sampling will be done according to the current
   # sampling rate. 'never' means that there is no sampling.
+  #
+  # The values :always and :never are deprecated and
   #
   AppOpticsAPM::Config[:tracing_mode] = :always
 
@@ -110,38 +123,25 @@ if defined?(AppOpticsAPM::Config)
   #
   # Transaction Settings
   #
-  # Use this configuration to filter out requests for which no metrics or traces
-  # should get recorded, for example long running requests that distort the metrics.
+  # Use this configuration to overwrite the global tracing mode and disable resp.
+  # enable metrics and traces for certain transactions.
   #
-  # :type        defaults to :url and can be omitted for now
+  # Currently allowed hash keys:
+  # :url to apply listed filters to urls.
+  #      The matching of settings to urls happens before routes are applied.
+  #      The url is extracted from the env argument passed to rack: `env['PATH_INFO']`
+  #
   # :extensions  takes an array of strings for filtering (not regular expressions!)
   # :regexp      is a regular expression that is applied to the incoming path
-  #                 to determine whether the request should be measured and
-  #                 traced or not.
-  # :tracing     defaults to :disabled and can be omitted for now
-  # :opts        can be omitted, nil, or Regexp::IGNORECASE
-  #
-  # The matching of settings to urls happens before routes are applied.
-  # The path originates from the env argument passed to the rack call:
-  #     env['PATH_INFO']
+  # :opts        (optional) nil(default) or Regexp::IGNORECASE (options for regexp)
+  # :tracing     defaults to :disabled, can be set to :enabled to override
+  #              the global :disabled setting
   #
   # Be careful not to add too many :regexp configurations as they will slow
   # down execution.
   #
-  AppOpticsAPM::Config[:transaction_settings] = [
-    # { type: :url,
-    #   extensions: %w['long_job'],
-    #   tracing: :disabled
-    # },
-    # { type: :url,
-    #   regexp: '^.*\/long_job\/.*$',
-    #   opts: Regexp::IGNORECASE,
-    #   tracing: :disabled
-    # }
-  ]
-
   AppOpticsAPM::Config[:transaction_settings] = {
-    # url: [
+    url: [
     #   {
     #     extensions: %w['long_job'],
     #     tracing: :disabled
@@ -151,7 +151,7 @@ if defined?(AppOpticsAPM::Config)
     #     opts: Regexp::IGNORECASE,
     #     tracing: :disabled
     #   }
-    # ]
+    ]
   }
   #
 

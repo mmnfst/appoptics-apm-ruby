@@ -94,6 +94,7 @@ class RackTestApp < Minitest::Test
     get "/lobster?blah=1"
 
     traces = get_all_traces
+    refute_equal 0, traces.count
 
     xtrace = last_response['X-Trace']
     assert xtrace
@@ -108,6 +109,7 @@ class RackTestApp < Minitest::Test
     get "/lobster?blah=1"
 
     traces = get_all_traces
+    refute_equal 0, traces.count
 
     xtrace = last_response['X-Trace']
     assert xtrace
@@ -157,7 +159,7 @@ class RackTestApp < Minitest::Test
   # the status returned by @app.call(env) is usually an integer, but there are cases where it is a string
   # encountered by this app: https://github.com/librato/api which proxies requests "through to a java service by rack"
   def test_status_can_be_a_string
-    Rack::URLMap.any_instance.stubs(:call).returns(["200", {"Content-Length"=>"592"}, "the body"])
+    Rack::URLMap.any_instance.expects(:call).returns(["200", {"Content-Length"=>"592"}, "the body"])
 
     result = get '/lobster'
 
@@ -168,6 +170,7 @@ class RackTestApp < Minitest::Test
     get '/the_exception'
 
     traces = get_all_traces
+    refute_equal 0, traces.count
 
     error_trace = traces.find { |trace| trace['Label'] == 'error' }
     assert_equal 'error', error_trace['Spec']
@@ -181,6 +184,7 @@ class RackTestApp < Minitest::Test
     get '/lobster'
 
     traces = get_all_traces
+    refute_equal 0, traces.count
 
     refute traces[0]['Backtrace']
   end

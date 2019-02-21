@@ -217,7 +217,12 @@ module AppOpticsAPM
       def log_entry(layer, opts = {}, op = nil)
         return AppOpticsAPM::Context.toString unless AppOpticsAPM.tracing?
 
-        AppOpticsAPM.layer_op = (AppOpticsAPM.layer_op || []) << op.to_sym if op
+        if op
+          re_entry = AppOpticsAPM.layer_op&.last == op.to_sym
+          AppOpticsAPM.layer_op = (AppOpticsAPM.layer_op || []) << op.to_sym
+          return AppOpticsAPM::Context.toString if re_entry
+        end
+
         log_event(layer, :entry, AppOpticsAPM::Context.createEvent, opts)
       end
 
@@ -251,7 +256,7 @@ module AppOpticsAPM
       #
       # * +layer+ - The layer the reported event belongs to
       # * +opts+  - A hash containing key/value pairs that will be reported along with this event (optional).
-      # * +op+    - Used to avoid double tracing recursive calls, needs to be true in +log_exit+ that corresponds to a
+      # * +op+    - Used to avoid double tracing recursive calls, needs to be the same in +log_exit+ that corresponds to a
       #   +log_entry+
       #
       # ==== Example
@@ -262,7 +267,10 @@ module AppOpticsAPM
       def log_exit(layer, opts = {}, op = nil)
         return AppOpticsAPM::Context.toString unless AppOpticsAPM.tracing?
 
-        AppOpticsAPM.layer_op.pop if op && AppOpticsAPM.layer_op.is_a?(Array) && AppOpticsAPM.layer_op.last == op.to_sym
+        if op
+          AppOpticsAPM.layer_op.pop if AppOpticsAPM.layer_op&.last == op.to_sym
+          return AppOpticsAPM::Context.toString if AppOpticsAPM.layer_op&.last == op.to_sym
+        end
 
         log_event(layer, :exit, AppOpticsAPM::Context.createEvent, opts)
       end

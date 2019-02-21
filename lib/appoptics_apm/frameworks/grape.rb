@@ -68,6 +68,7 @@ module AppOpticsAPM
             # Since calls to error() are handled similar to abort in Grape.  We
             # manually log the rack exit here since the original code won't
             # be returned to
+            # TODO but there is an exception, see test 0004
             xtrace = AppOpticsAPM::API.log_end('rack', :Status => status)
           end
 

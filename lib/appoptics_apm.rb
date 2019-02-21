@@ -8,7 +8,7 @@ begin
   require 'appoptics_apm/logger'
   require 'appoptics_apm/util'
   require 'appoptics_apm/xtrace'
-  require 'appoptics_apm/support'
+  require 'appoptics_apm/support_report'
   require 'appoptics_apm/base'
   AppOpticsAPM.loaded = false
 
@@ -48,6 +48,7 @@ begin
   if AppOpticsAPM.loaded
     # tracing mode is configured via config file but can only be set once we have oboe_metal loaded
     AppOpticsAPM.set_tracing_mode(AppOpticsAPM::Config[:tracing_mode].to_sym)
+    require 'appoptics_apm/support/transaction_metrics'
     require 'appoptics_apm/instrumentation'
 
     # Frameworks

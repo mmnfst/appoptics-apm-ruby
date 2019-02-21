@@ -6,7 +6,7 @@ require 'appoptics_apm/inst/rack'
 require 'mocha/minitest'
 
 # Cases:
-# 1) tracing_mode: never?  => call app
+# 1) tracing_mode: tracing_disabled?  => call app
 # 2) tracing_mode: always, dnt: true?  => call app
 # 3) --#--, dnt: false, context: tracing && layer: rack?  => call app
 # 4a) --#--, not(context: tracing && layer: rack?), tracing disabled for path =>
@@ -15,8 +15,8 @@ require 'mocha/minitest'
 #
 # A) context: tracing && layer: rack?  => #call_app
 # B) not(context: tracing && layer: rack?), asset? true  => #call_app
-# C) --#--, asset? false, never? true => #tracing_disabled_call
-# D) --#--, never? false, tracing_disabled? true => #tracing_disabled_call
+# C) --#--, asset? false, tracing_disabled? true => #tracing_disabled_call
+# D) --#--, tracing_disabled? false, tracing_disabled? true => #tracing_disabled_call
 # E) --#--, tracing_disabled? false, context.valid? true => #sampling_call
 # F) --#--, context.valid? false => #metrics_sampling_call
 
@@ -45,8 +45,8 @@ describe "Rack: " do
   # the following is a common situation for grape, which,
   # when instrumented, calls AppOpticsAPM::Rack#call 3 times
   describe 'A - when we are tracing and the layer is rack' do
-    it 'calls #app_call' do
-      @rack.expects(:call_app)
+    it 'call @app.call' do
+      @rack.app.expects(:call)
 
       AppOpticsAPM::API.start_trace(:rack) do
         @rack.call({})
@@ -69,7 +69,7 @@ describe "Rack: " do
 
   describe 'B - asset?' do
     it 'ignores dnt if there is no :dnt_compiled' do
-      AppOpticsAPM::API.expects(:log_start)
+      AppOpticsAPM::API.expects(:log_entry)
       AppOpticsAPM::Span.expects(:createHttpSpan)
 
       AppOpticsAPM::Config.dnt_compiled = nil
@@ -80,7 +80,7 @@ describe "Rack: " do
     end
 
     it 'does not send metrics/traces when dnt matches' do
-      AppOpticsAPM::API.expects(:log_start).never
+      AppOpticsAPM::API.expects(:log_entry).never
       AppOpticsAPM::Span.expects(:createHttpSpan).never
 
       AppOpticsAPM::Config.dnt_compiled = Regexp.new('.*test$')
@@ -92,7 +92,7 @@ describe "Rack: " do
     end
 
     it 'sends metrics/traces when dnt does not match' do
-      AppOpticsAPM::API.expects(:log_start).once
+      AppOpticsAPM::API.expects(:log_entry).once
       AppOpticsAPM::Span.expects(:createHttpSpan).once
 
       AppOpticsAPM::Config.dnt_compiled = Regexp.new('.*rainbow$')
@@ -107,7 +107,7 @@ describe "Rack: " do
   describe 'C - when tracing_mode is never' do
     it 'does not send metrics or traces' do
       @app.expects(:call).returns([200, {}, ''])
-      AppOpticsAPM::API.expects(:log_start).never
+      AppOpticsAPM::API.expects(:log_entry).never
       AppOpticsAPM::Span.expects(:createHttpSpan).never
 
       AppOpticsAPM::Config.tracing_mode = :never
@@ -117,7 +117,8 @@ describe "Rack: " do
     end
 
     it 'calls #tracing_disabled_call' do
-      @rack.expects(:tracing_disabled_call)
+      AppOpticsAPM::API.expects(:log_entry).never
+      AppOpticsAPM::Span.expects(:createHttpSpan).never
 
       AppOpticsAPM::Config.tracing_mode = :never
       @rack.call({})
@@ -126,36 +127,38 @@ describe "Rack: " do
 
   describe 'D - tracing disabled for path' do
     it 'calls #tracing_disabled_call when disabled' do
-      @rack.expects(:tracing_disabled_call)
+      AppOpticsAPM::API.expects(:log_entry).never
+      AppOpticsAPM::Span.expects(:createHttpSpan).never
 
-      AppOpticsApm::Config[:transaction_settings] = [{ regexp: /this_one/ }]
+      AppOpticsApm::Config[:transaction_settings] = { url: [{ regexp: /this_one/ }] }
       @rack.call({ 'PATH_INFO' => '/this_one/test' })
     end
 
     it 'does not call #tracing_disabled_call when not disabled' do
-      @rack.expects(:tracing_disabled_call).never
+      AppOpticsAPM::API.expects(:log_entry).once
+      AppOpticsAPM::Span.expects(:createHttpSpan).once
 
-      AppOpticsApm::Config[:transaction_settings] = [{ regexp: /that/ }]
+      AppOpticsApm::Config[:transaction_settings] = { url: [{ regexp: /that/ }] }
       @rack.call({ 'PATH_INFO' => '/this_one/test' })
     end
 
     it 'does not send metrics and traces when disabled' do
       @app.expects(:call).returns([200, {}, ''])
-      AppOpticsAPM::API.expects(:log_start).never
+      AppOpticsAPM::API.expects(:log_entry).never
       AppOpticsAPM::Span.expects(:createHttpSpan).never
 
-      AppOpticsApm::Config[:transaction_settings] = [{ regexp: /this_one/ }]
+      AppOpticsApm::Config[:transaction_settings] = { url: [{ regexp: /this_one/ }] }
       @rack.call({ 'PATH_INFO' => '/this_one/test' })
 
       refute AppOpticsAPM::Context.isValid
     end
 
     it 'sends metrics and traces when not disabled' do
-      @app.expects(:call).returns([200, {}, ''])
-      AppOpticsAPM::API.expects(:log_start)
+      @rack.app.expects(:call).returns([200, {}, ''])
+      AppOpticsAPM::API.expects(:log_entry)
       AppOpticsAPM::Span.expects(:createHttpSpan)
 
-      AppOpticsApm::Config[:transaction_settings] = [{ regexp: /that/ }]
+      AppOpticsApm::Config[:transaction_settings] = { url: [{ regexp: /that/ }] }
       @rack.call({ 'PATH_INFO' => '/this_one/test' })
 
       refute AppOpticsAPM::Context.isValid
@@ -188,12 +191,14 @@ describe "Rack: " do
     end
 
     it "should call the app's call method" do
-      @app.expects(:call)
+      @rack.app.expects(:call)
 
       AppOpticsAPM::API.start_trace(:other) do
         @rack.call({})
         assert AppOpticsAPM::Context.isValid
       end
+
+      refute AppOpticsAPM::Context.isValid
     end
 
   end
@@ -201,8 +206,8 @@ describe "Rack: " do
   describe 'F - when there is no context' do
 
     it 'should start/end a trace and send metrics' do
-      AppOpticsAPM::API.expects(:log_start)
-      AppOpticsAPM::API.expects(:log_end)
+      AppOpticsAPM::API.expects(:log_entry)
+      AppOpticsAPM::API.expects(:log_exit)
       AppOpticsAPM::Span.expects(:createHttpSpan)
 
       @rack.call({})
@@ -213,8 +218,8 @@ describe "Rack: " do
     it 'should start/end a trace and send metrics when there is an exception' do
       def @app.call(_); raise StandardError; end
 
-      AppOpticsAPM::API.expects(:log_start)
-      AppOpticsAPM::API.expects(:log_end)
+      AppOpticsAPM::API.expects(:log_entry)
+      AppOpticsAPM::API.expects(:log_exit)
       AppOpticsAPM::Span.expects(:createHttpSpan)
 
       assert_raises StandardError do
@@ -225,7 +230,7 @@ describe "Rack: " do
     end
 
     it "should call the app's call method" do
-      @app.expects(:call)
+      @rack.app.expects(:call)
 
       @rack.call({})
       refute AppOpticsAPM::Context.isValid

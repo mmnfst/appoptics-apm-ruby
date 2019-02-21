@@ -85,6 +85,7 @@ do
     cd -
     exit
   fi
+  sleep 1
 done
 
 rbenv local 2.5.3

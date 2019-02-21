@@ -175,6 +175,7 @@ module AppOpticsAPM
 
         if AppOpticsAPM::Context.isValid # not an entry span!
           result = trace(span, opts) { yield }
+
           target['X-Trace'] = AppOpticsAPM::Context.toString
           return result
         end
