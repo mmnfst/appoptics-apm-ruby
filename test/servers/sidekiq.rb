@@ -7,9 +7,9 @@
 require 'sidekiq/cli'
 
 unless `ps aux | grep [s]idekiq`.empty?
-  AppOpticsAPM.logger.debug "[appoptics_apm/servers] Killing old sidekiq process."
+  AppOpticsAPM.logger.info "[appoptics_apm/servers] Killing old sidekiq process."
   cmd = "kill -9 `ps -aef | grep 'sidekiq' | grep -v grep | awk '{print $2}'`"
-  `#{cmd}`
+  system(cmd)
 end
 
 AppOpticsAPM.logger.info "[appoptics_apm/servers] Starting up background Sidekiq."
