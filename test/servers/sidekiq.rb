@@ -6,7 +6,7 @@
 #
 require 'sidekiq/cli'
 
-unless `ps aux | grep [s]idekiq`.empty?
+unless `ps aux | grep [s]idekiq`.empty? || ENV['TRAVIS']
   AppOpticsAPM.logger.info "[appoptics_apm/servers] Killing old sidekiq process."
   cmd = "kill -9 `ps -aef | grep 'sidekiq' | grep -v grep | awk '{print $2}'`"
   system(cmd)
