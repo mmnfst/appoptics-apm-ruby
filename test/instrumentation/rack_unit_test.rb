@@ -5,21 +5,6 @@ require 'minitest_helper'
 require 'appoptics_apm/inst/rack'
 require 'mocha/minitest'
 
-# Cases:
-# 1) tracing_mode: never?  => call app
-# 2) tracing_mode: always, dnt: true?  => call app
-# 3) --#--, dnt: false, context: tracing && layer: rack?  => call app
-# 4a) --#--, not(context: tracing && layer: rack?), tracing disabled for path =>
-# 4) --#--, , context: valid?  => trace + call app
-# 5) --#--, context: not valid   => metrics + trace + call app
-#
-# A) context: tracing && layer: rack?  => #call_app
-# B) not(context: tracing && layer: rack?), asset? true  => #call_app
-# C) --#--, asset? false, never? true => #tracing_disabled_call
-# D) --#--, never? false, tracing_disabled? true => #tracing_disabled_call
-# E) --#--, tracing_disabled? false, context.valid? true => #sampling_call
-# F) --#--, context.valid? false => #metrics_sampling_call
-
 describe "Rack: " do
 
   def restart_rack
@@ -32,7 +17,9 @@ describe "Rack: " do
     @transactions = AppOpticsAPM::Util.deep_dup(AppOpticsAPM::Config[:transaction_settings])
 
     @app = mock('app')
-    def @app.call(_); [200, {}, "response"] ; end
+    def @app.call(_)
+      [200, {}, "response"]
+    end
     @rack = AppOpticsAPM::Rack.new(@app)
   end
 
@@ -45,37 +32,55 @@ describe "Rack: " do
   # the following is a common situation for grape, which,
   # when instrumented, calls AppOpticsAPM::Rack#call 3 times
   describe 'A - when we are tracing and the layer is rack' do
-    it 'calls #app_call' do
-      @rack.expects(:call_app)
+    it 'calls @app.call' do
+      @rack.app.expects(:call)
 
       AppOpticsAPM::API.start_trace(:rack) do
         @rack.call({})
         assert AppOpticsAPM::Context.isValid
+      end
+
+      refute AppOpticsAPM::Context.isValid
+    end
+
+    it "does not call createHttpSpan" do
+      AppOpticsAPM::API.start_trace(:rack) do
+        AppOpticsAPM::API.expects(:log_start).never
+        AppOpticsAPM::Span.expects(:createHttpSpan).never
+
+        _, header, _ = @rack.call({})
+        assert AppOpticsAPM::Context.isValid
+
+        refute header['X-Trace']
       end
       refute AppOpticsAPM::Context.isValid
     end
 
-    it "calls the app's call method but not createHttpSpan" do
-      @app.expects(:call)
-      AppOpticsAPM::Span.expects(:createHttpSpan).never
+    it "does not return an xtrace header" do
+      header = nil
 
       AppOpticsAPM::API.start_trace(:rack) do
-        @rack.call({})
+        _, header, _ = @rack.call({})
         assert AppOpticsAPM::Context.isValid
       end
+
+      refute header['X-Trace']
       refute AppOpticsAPM::Context.isValid
     end
   end
 
   describe 'B - asset?' do
     it 'ignores dnt if there is no :dnt_compiled' do
-      AppOpticsAPM::API.expects(:log_start)
-      AppOpticsAPM::Span.expects(:createHttpSpan)
+      AppOpticsAPM::API.expects(:log_start).twice
+      AppOpticsAPM::Span.expects(:createHttpSpan).twice
 
       AppOpticsAPM::Config.dnt_compiled = nil
 
-      @rack.call({})
+      _, headers_1, _ = @rack.call({})
+      _, headers_2, _ = @rack.call({ 'PATH_INFO' => '/blablabla/test' })
 
+      AppOpticsAPM::XTrace.valid?(headers_1['X-Trace'])
+      AppOpticsAPM::XTrace.valid?(headers_2['X-Trace'])
       refute AppOpticsAPM::Context.isValid
     end
 
@@ -84,10 +89,11 @@ describe "Rack: " do
       AppOpticsAPM::Span.expects(:createHttpSpan).never
 
       AppOpticsAPM::Config.dnt_compiled = Regexp.new('.*test$')
-
       restart_rack
-      @rack.call({ 'PATH_INFO' => '/blablabla/test' })
 
+      _, headers, _ = @rack.call({ 'PATH_INFO' => '/blablabla/test' })
+
+      refute headers['X-Trace']
       refute AppOpticsAPM::Context.isValid
     end
 
@@ -96,47 +102,49 @@ describe "Rack: " do
       AppOpticsAPM::Span.expects(:createHttpSpan).once
 
       AppOpticsAPM::Config.dnt_compiled = Regexp.new('.*rainbow$')
-
       restart_rack
-      @rack.call({ 'PATH_INFO' => '/blablabla/test' })
 
+      _, headers, _ = @rack.call({ 'PATH_INFO' => '/blablabla/test' })
+
+      AppOpticsAPM::XTrace.valid?(headers['X-Trace'])
       refute AppOpticsAPM::Context.isValid
     end
   end
 
-  describe 'C - when tracing_mode is never' do
-    it 'does not send metrics or traces' do
-      @app.expects(:call).returns([200, {}, ''])
+  describe 'C - when tracing_mode is :never' do
+    it 'does not send metrics or traces for :never' do
       AppOpticsAPM::API.expects(:log_start).never
       AppOpticsAPM::Span.expects(:createHttpSpan).never
 
       AppOpticsAPM::Config.tracing_mode = :never
-      @rack.call({})
+      _, headers, _ = @rack.call({})
 
+      assert AppOpticsAPM::XTrace.valid?(headers['X-Trace'])
+      refute AppOpticsAPM::XTrace.sampled?(headers['X-Trace'])
       refute AppOpticsAPM::Context.isValid
     end
-
-    it 'calls #tracing_disabled_call' do
-      @rack.expects(:tracing_disabled_call)
-
-      AppOpticsAPM::Config.tracing_mode = :never
-      @rack.call({})
-    end
-  end
+ end
 
   describe 'D - tracing disabled for path' do
-    it 'calls #tracing_disabled_call when disabled' do
-      @rack.expects(:tracing_disabled_call)
+    it 'sends metrics and traces when not disabled' do
+      AppOpticsAPM::API.expects(:log_start).once
+      AppOpticsAPM::Span.expects(:createHttpSpan).once
 
-      AppOpticsApm::Config[:transaction_settings] = [{ regexp: /this_one/ }]
+      AppOpticsAPM::Config.tracing_mode = :always
+      AppOpticsApm::Config[:transaction_settings] = { url: [{ regexp: /that/ }] }
+
       @rack.call({ 'PATH_INFO' => '/this_one/test' })
     end
 
-    it 'does not call #tracing_disabled_call when not disabled' do
-      @rack.expects(:tracing_disabled_call).never
+    it 'sets a sampled x-trace header when not disabled' do
+      AppOpticsAPM::Config.tracing_mode = :always
+      AppOpticsApm::Config[:transaction_settings] = { url: [{ regexp: /that/ }] }
 
-      AppOpticsApm::Config[:transaction_settings] = [{ regexp: /that/ }]
-      @rack.call({ 'PATH_INFO' => '/this_one/test' })
+      _, headers, _ = @rack.call({ 'PATH_INFO' => '/this_one/test' })
+
+      assert AppOpticsAPM::XTrace.valid?(headers['X-Trace'])
+      assert AppOpticsAPM::XTrace.sampled?(headers['X-Trace'])
+      refute AppOpticsAPM::Context.isValid
     end
 
     it 'does not send metrics and traces when disabled' do
@@ -144,34 +152,33 @@ describe "Rack: " do
       AppOpticsAPM::API.expects(:log_start).never
       AppOpticsAPM::Span.expects(:createHttpSpan).never
 
-      AppOpticsApm::Config[:transaction_settings] = [{ regexp: /this_one/ }]
-      @rack.call({ 'PATH_INFO' => '/this_one/test' })
+      AppOpticsAPM::Config.tracing_mode = :always
+      AppOpticsApm::Config[:transaction_settings] = { url: [{ regexp: /this_one/ }] }
 
-      refute AppOpticsAPM::Context.isValid
+      @rack.call({ 'PATH_INFO' => '/this_one/test' })
     end
 
-    it 'sends metrics and traces when not disabled' do
-      @app.expects(:call).returns([200, {}, ''])
-      AppOpticsAPM::API.expects(:log_start)
-      AppOpticsAPM::Span.expects(:createHttpSpan)
+    it 'returns an unsampled x-trace header when disabled' do
+      AppOpticsAPM::Config.tracing_mode = :always
+      AppOpticsApm::Config[:transaction_settings] = { url: [{ regexp: /this_one/ }] }
 
-      AppOpticsApm::Config[:transaction_settings] = [{ regexp: /that/ }]
-      @rack.call({ 'PATH_INFO' => '/this_one/test' })
+      _, headers, _ = @rack.call({ 'PATH_INFO' => '/this_one/test' })
 
+      assert AppOpticsAPM::XTrace.valid?(headers['X-Trace'])
+      refute AppOpticsAPM::XTrace.sampled?(headers['X-Trace'])
       refute AppOpticsAPM::Context.isValid
     end
   end
 
-  describe 'E - when there is a context' do
+  describe 'E - when there is a context not from rack' do
 
     it 'should log a an entry and exit' do
-      AppOpticsAPM::API.expects(:log_entry)
-      AppOpticsAPM::API.expects(:log_exit)
-      AppOpticsAPM::Span.expects(:createHttpSpan).never
-
       AppOpticsAPM::API.start_trace(:other) do
+        AppOpticsAPM::API.expects(:log_start)
+        AppOpticsAPM::API.expects(:log_exit)
+        AppOpticsAPM::Span.expects(:createHttpSpan).never
+
         @rack.call({})
-        assert AppOpticsAPM::Context.isValid
       end
     end
 
@@ -188,12 +195,14 @@ describe "Rack: " do
     end
 
     it "should call the app's call method" do
-      @app.expects(:call)
+      @rack.app.expects(:call)
 
       AppOpticsAPM::API.start_trace(:other) do
         @rack.call({})
         assert AppOpticsAPM::Context.isValid
       end
+
+      refute AppOpticsAPM::Context.isValid
     end
 
   end
@@ -202,11 +211,17 @@ describe "Rack: " do
 
     it 'should start/end a trace and send metrics' do
       AppOpticsAPM::API.expects(:log_start)
-      AppOpticsAPM::API.expects(:log_end)
+      AppOpticsAPM::API.expects(:log_exit)
       AppOpticsAPM::Span.expects(:createHttpSpan)
 
       @rack.call({})
+    end
 
+    it 'should return an x-trace header' do
+      _, headers, _ = @rack.call({})
+
+      assert AppOpticsAPM::XTrace.valid?(headers['X-Trace'])
+      assert AppOpticsAPM::XTrace.sampled?(headers['X-Trace'])
       refute AppOpticsAPM::Context.isValid
     end
 
@@ -214,23 +229,51 @@ describe "Rack: " do
       def @app.call(_); raise StandardError; end
 
       AppOpticsAPM::API.expects(:log_start)
-      AppOpticsAPM::API.expects(:log_end)
+      AppOpticsAPM::API.expects(:log_exit)
       AppOpticsAPM::Span.expects(:createHttpSpan)
 
       assert_raises StandardError do
         @rack.call({})
+      end
+    end
+
+    it "should clear the context if there is an exception" do
+      def @app.call(_); raise StandardError; end
+      begin
+        @rack.call({})
+      rescue
       end
 
       refute AppOpticsAPM::Context.isValid
     end
 
     it "should call the app's call method" do
-      @app.expects(:call)
+      @rack.app.expects(:call)
 
       @rack.call({})
+
       refute AppOpticsAPM::Context.isValid
     end
 
   end
 
+  describe 'G - when there is a non-sampling context' do
+    it 'returns a non sampling header' do
+      AppOpticsAPM::Context.fromString('2B7435A9FE510AE4533414D425DADF4E180D2B4E3649E60702469DB05F00')
+      _, headers, _ = @rack.call({})
+
+      assert AppOpticsAPM::XTrace.valid?(headers['X-Trace'])
+      refute AppOpticsAPM::XTrace.sampled?(headers['X-Trace'])
+      assert AppOpticsAPM::Context.isValid
+    end
+
+    it 'does not trace or send metrics' do
+      AppOpticsAPM::Context.fromString('2B7435A9FE510AE4533414D425DADF4E180D2B4E3649E60702469DB05F00')
+
+      AppOpticsAPM::API.expects(:log_start).never
+      AppOpticsAPM::Span.expects(:createHttpSpan).never
+
+      @rack.call({})
+    end
+  end
 end

@@ -6,10 +6,10 @@
 #
 require 'sidekiq/cli'
 
-unless `ps aux | grep [s]idekiq`.empty?
+unless `ps aux | grep [s]idekiq`.empty? || ENV['TRAVIS']
   AppOpticsAPM.logger.debug "[appoptics_apm/servers] Killing old sidekiq process."
   cmd = "kill -9 `ps -aef | grep 'sidekiq' | grep -v grep | awk '{print $2}'`"
-  `#{cmd}`
+  # `#{cmd}`
 end
 
 AppOpticsAPM.logger.info "[appoptics_apm/servers] Starting up background Sidekiq."
@@ -29,7 +29,6 @@ AppOpticsAPM.logger.debug "[appoptics_apm/servers] sidekiq #{arguments}"
 
 Thread.new do
   system("APPOPTICS_GEM_TEST=true sidekiq #{arguments}")
-  # system("sidekiq #{arguments}")
 end
 
 # Allow Sidekiq to boot up

@@ -70,7 +70,7 @@ if defined?(Delayed)
                   report_kvs[:attempts] = job.attempts
                   report_kvs[:WorkerName] = job.locked_by
                 rescue => e
-                  AppOpticsAPM.logger.warn "[appoptics_apm/warning] inst/delayed_job.rb: #{e.message}"
+                  AppOpticsAPM.logger.warn "[appoptics_apm/warn] inst/delayed_job.rb: #{e.message}"
                 end
 
                 AppOpticsAPM::SDK.start_trace(:'delayed_job-worker', nil, report_kvs) do

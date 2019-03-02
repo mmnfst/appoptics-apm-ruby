@@ -147,11 +147,15 @@ module AppOpticsAPMBase
     AppOpticsAPM.layer_op.last == operation.to_sym
   end
 
+  # TODO ME review use of these boolean statements
+  # ____ they should now be handled by TransactionSettings,
+  # ____ because there can be exceptions to :always and :never
+
   ##
   # Returns true if the tracing_mode is set to always.
   # False otherwise
   #
-  def always?
+  def tracing_enabled?
     AppOpticsAPM::Config[:tracing_mode] &&
       AppOpticsAPM::Config[:tracing_mode].to_sym == :always
   end
@@ -160,7 +164,7 @@ module AppOpticsAPMBase
   # Returns true if the tracing_mode is set to never.
   # False otherwise
   #
-  def never?
+  def tracing_disabled?
     AppOpticsAPM::Config[:tracing_mode] &&
       AppOpticsAPM::Config[:tracing_mode].to_sym == :never
   end
@@ -170,7 +174,7 @@ module AppOpticsAPMBase
   # False otherwise
   #
   def tracing?
-    return false if !AppOpticsAPM.loaded || AppOpticsAPM.never?
+    return false if !AppOpticsAPM.loaded # || AppOpticsAPM.tracing_disabled?
     AppOpticsAPM::Context.isSampled
   end
 

@@ -29,6 +29,7 @@ unless defined?(JRUBY_VERSION)
     def test_localset_sample_source
       # skip("FIXME: broken on travis only") if ENV['TRAVIS'] == "true"
 
+      # TODO rethink how we get sample rate and source
       # We make an initial call here which will force the appoptics_apm gem to retrieve
       # the sample_rate and sample_source from liboboe (via sample? method)
       get "/lobster"
@@ -44,7 +45,7 @@ unless defined?(JRUBY_VERSION)
 
       kvs = {}
       kvs["SampleRate"] = 1000000
-      kvs["SampleSource"] = 1 # (OBOE_SAMPLE_RATE_SOURCE_FILE)
+      kvs["SampleSource"] = 7 # (OBOE_SAMPLE_RATE_SOURCE_CUSTOM)
       validate_event_keys(traces[0], kvs)
     end
 

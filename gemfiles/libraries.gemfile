@@ -15,7 +15,7 @@ group :development, :test do
   gem 'mocha'
   gem 'rack-test'
   gem 'rake'
-  gem 'bson' , '~> 4.0'
+  # gem 'bson' , '~> 4.0'
   gem 'puma'# , '< 3.1.0'
   gem 'webmock'
   gem 'grpc-tools' if RUBY_VERSION < '2.6.0'

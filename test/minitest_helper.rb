@@ -72,7 +72,7 @@ ENV['APPOPTICS_GEM_TEST'] = 'true'
 
 # ENV['APPOPTICS_GEM_VERBOSE'] = 'true'
 
-Minitest::Spec.new 'pry'
+# Minitest::Spec.new 'pry'
 
 MiniTest::Reporters.use! MiniTest::Reporters::SpecReporter.new
 
@@ -94,7 +94,9 @@ AppOpticsAPM::Config[:sample_rate] = 1000000
 # puts %x{psql -c 'create database travis_ci_test;' -U postgres}
 
 # Our background Rack-app for http client testing
-require './test/servers/rackapp_8101' unless File.basename(ENV['BUNDLE_GEMFILE']) =~ /unit/
+unless File.basename(ENV['BUNDLE_GEMFILE']) =~ /unit/ || /benchmark/ =~ $0
+  require './test/servers/rackapp_8101'
+end
 
 # Conditionally load other background servers
 # depending on what we're testing
@@ -120,7 +122,7 @@ when /libraries/
   # Load Sidekiq if TEST isn't defined or if it is, it calls
   # out the sidekiq tests
   # Background Sidekiq thread
-  if !ENV.key?('TEST') || ENV['TEST'] =~ /sidekiq/
+  unless (ENV.key?('TEST') && ENV['TEST'] =~ /sidekiq/) || (/benchmark/ =~ $0)
     require './test/servers/sidekiq.rb'
   end
 end

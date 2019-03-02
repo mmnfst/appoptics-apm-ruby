@@ -9,14 +9,14 @@ module AppOpticsAPM
       # Deprecated
       # no usages
       def appoptics_rum_header
-        AppOpticsAPM.logger.warn '[appoptics_apm/warn] Note that appoptics_rum_header is deprecated.  It is now a no-op and should be removed from your application code.'
+        AppOpticsAPM.logger.warn '[appoptics_apm/deprecated] Note that appoptics_rum_header is deprecated.  It is now a no-op and should be removed from your application code.'
         return ''
       end
       alias_method :oboe_rum_header, :appoptics_rum_header
 
       # Deprecated
       def appoptics_rum_footer
-        AppOpticsAPM.logger.warn '[appoptics_apm/warn] Note that appoptics_rum_footer is deprecated.  It is now a no-op and should be removed from your application code.'
+        AppOpticsAPM.logger.warn '[appoptics_apm/deprecated] Note that appoptics_rum_footer is deprecated.  It is now a no-op and should be removed from your application code.'
         return ''
       end
       alias_method :oboe_rum_footer, :appoptics_rum_footer
